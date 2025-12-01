@@ -8,4 +8,4 @@ pytest==7.4.3
 scipy==1.11.4
 mediapipe==0.10.14
 protobuf==4.25.3
-gunicorn==20.1.0s
+gunicorn==20.1.0
