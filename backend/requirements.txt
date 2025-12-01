@@ -1,6 +1,6 @@
 flask==3.0.0
 flask-cors==4.0.0
-opencv-python==4.8.1.78
+opencv-python-headless==4.8.1.78
 numpy==1.26.2
 imutils==0.5.4
 hypothesis==6.92.1
