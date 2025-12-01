@@ -87,9 +87,10 @@ def decode_image(base64_string):
     img_data = base64.b64decode(base64_string.split(',')[1])
     nparr = np.frombuffer(img_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    original_shape = img.shape  # Store original dimensions
     # Resize to smaller dimensions for faster processing
     img = cv2.resize(img, (320, 240))
-    return img
+    return img, original_shape
 
 @app.route('/detect_drowsiness', methods=['POST'])
 def detect_drowsiness():
@@ -103,8 +104,12 @@ def detect_drowsiness():
             return jsonify({'error': 'No image provided'}), 400
         
         # Decode image
-        frame = decode_image(image_data)
+        frame, original_shape = decode_image(image_data)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate scaling factors for coordinate conversion
+        scale_x = original_shape[1] / frame.shape[1]  # original_width / resized_width
+        scale_y = original_shape[0] / frame.shape[0]  # original_height / resized_height
         
         # Check image quality (brightness)
         avg_brightness = np.mean(gray)
@@ -134,7 +139,16 @@ def detect_drowsiness():
         face_landmarks = results.multi_face_landmarks[0].landmark
         height, width = gray.shape
 
+        # Calculate face box on resized image
         face_box = calc_face_box(face_landmarks, width, height)
+        
+        # Scale face box coordinates back to original image dimensions
+        face_box = {
+            'left': int(face_box['left'] * scale_x),
+            'top': int(face_box['top'] * scale_y),
+            'right': int(face_box['right'] * scale_x),
+            'bottom': int(face_box['bottom'] * scale_y)
+        }
 
         # Calculate EAR for both eyes
         left_ear = eye_aspect_ratio_from_landmarks(face_landmarks, width, height, LEFT_EYE_IDX)
