@@ -266,16 +266,18 @@ def test_ear_calculation_correctness(left_eye, right_eye):
     and C is the horizontal distance, the average of both eyes should be computed, 
     and the result should be rounded to 3 decimal places in the response.
     """
-    from scipy.spatial import distance
+    def euclidean_distance(point1, point2):
+        """Calculate Euclidean distance between two points"""
+        return np.linalg.norm(np.array(point1) - np.array(point2))
     
     def eye_aspect_ratio(eye):
         """Calculate the eye aspect ratio (EAR)"""
         # A: vertical distance between points 1 and 5
-        A = distance.euclidean(eye[1], eye[5])
+        A = euclidean_distance(eye[1], eye[5])
         # B: vertical distance between points 2 and 4
-        B = distance.euclidean(eye[2], eye[4])
+        B = euclidean_distance(eye[2], eye[4])
         # C: horizontal distance between points 0 and 3
-        C = distance.euclidean(eye[0], eye[3])
+        C = euclidean_distance(eye[0], eye[3])
         
         # Avoid division by zero
         if C == 0:
@@ -297,9 +299,9 @@ def test_ear_calculation_correctness(left_eye, right_eye):
     rounded_ear = round(avg_ear, 3)
     
     # Verify the formula is applied correctly for left eye
-    left_A = distance.euclidean(left_eye[1], left_eye[5])
-    left_B = distance.euclidean(left_eye[2], left_eye[4])
-    left_C = distance.euclidean(left_eye[0], left_eye[3])
+    left_A = euclidean_distance(left_eye[1], left_eye[5])
+    left_B = euclidean_distance(left_eye[2], left_eye[4])
+    left_C = euclidean_distance(left_eye[0], left_eye[3])
     
     if left_C > 0:
         expected_left_ear = (left_A + left_B) / (2.0 * left_C)
@@ -307,9 +309,9 @@ def test_ear_calculation_correctness(left_eye, right_eye):
             f"Left EAR calculation incorrect: {left_ear} != {expected_left_ear}"
     
     # Verify the formula is applied correctly for right eye
-    right_A = distance.euclidean(right_eye[1], right_eye[5])
-    right_B = distance.euclidean(right_eye[2], right_eye[4])
-    right_C = distance.euclidean(right_eye[0], right_eye[3])
+    right_A = euclidean_distance(right_eye[1], right_eye[5])
+    right_B = euclidean_distance(right_eye[2], right_eye[4])
+    right_C = euclidean_distance(right_eye[0], right_eye[3])
     
     if right_C > 0:
         expected_right_ear = (right_A + right_B) / (2.0 * right_C)

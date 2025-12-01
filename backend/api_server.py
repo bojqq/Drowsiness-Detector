@@ -3,7 +3,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import cv2
 import numpy as np
-from scipy.spatial import distance
 import base64
 import mediapipe as mp
 
@@ -45,6 +44,11 @@ LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
 
 
+def euclidean_distance(point1, point2):
+    """Calculate Euclidean distance between two points"""
+    return np.linalg.norm(np.array(point1) - np.array(point2))
+
+
 def landmark_to_point(landmark, width, height):
     """Convert normalized MediaPipe landmark to pixel coordinates"""
     return (int(landmark.x * width), int(landmark.y * height))
@@ -53,9 +57,9 @@ def landmark_to_point(landmark, width, height):
 def eye_aspect_ratio_from_landmarks(landmark_list, width, height, indices):
     """Calculate EAR using MediaPipe landmark indices"""
     points = [landmark_to_point(landmark_list[idx], width, height) for idx in indices]
-    A = distance.euclidean(points[1], points[5])
-    B = distance.euclidean(points[2], points[4])
-    C = distance.euclidean(points[0], points[3])
+    A = euclidean_distance(points[1], points[5])
+    B = euclidean_distance(points[2], points[4])
+    C = euclidean_distance(points[0], points[3])
     if C == 0:
         return 0.0
     return (A + B) / (2.0 * C)
