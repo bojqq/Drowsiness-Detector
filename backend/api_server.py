@@ -31,13 +31,20 @@ frame_counter = 0
 DEBUG_MODE = True
 
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=True,  # Changed to True for faster processing
-    max_num_faces=1,
-    refine_landmarks=False,  # Disabled for speed - we only need basic eye landmarks
-    min_detection_confidence=0.3,  # Lowered for faster detection
-    min_tracking_confidence=0.3
-)
+face_mesh = None  # Initialize lazily on first request to avoid startup timeout
+
+def get_face_mesh():
+    """Lazy-load face mesh model on first use"""
+    global face_mesh
+    if face_mesh is None:
+        face_mesh = mp_face_mesh.FaceMesh(
+            static_image_mode=True,
+            max_num_faces=1,
+            refine_landmarks=False,
+            min_detection_confidence=0.3,
+            min_tracking_confidence=0.3
+        )
+    return face_mesh
 
 # Landmark indices for MediaPipe face mesh
 LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
@@ -105,7 +112,8 @@ def detect_drowsiness():
             print(f"[DEBUG] Image brightness: {avg_brightness:.1f}/255")
         
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb_frame)
+        mesh = get_face_mesh()
+        results = mesh.process(rgb_frame)
 
         if not results.multi_face_landmarks:
             # Provide helpful feedback based on brightness
