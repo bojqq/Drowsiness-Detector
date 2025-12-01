@@ -32,11 +32,11 @@ DEBUG_MODE = True
 
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=False,
+    static_image_mode=True,  # Changed to True for faster processing
     max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    refine_landmarks=False,  # Disabled for speed - we only need basic eye landmarks
+    min_detection_confidence=0.3,  # Lowered for faster detection
+    min_tracking_confidence=0.3
 )
 
 # Landmark indices for MediaPipe face mesh
@@ -80,6 +80,8 @@ def decode_image(base64_string):
     img_data = base64.b64decode(base64_string.split(',')[1])
     nparr = np.frombuffer(img_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    # Resize to smaller dimensions for faster processing
+    img = cv2.resize(img, (320, 240))
     return img
 
 @app.route('/detect_drowsiness', methods=['POST'])
