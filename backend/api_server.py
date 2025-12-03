@@ -10,45 +10,17 @@ import time
 
 app = Flask(__name__)
 
-# Configure CORS to allow localhost during dev and a configurable production origin.
-default_origin = 'http://localhost:3000'
-frontend_origin = os.environ.get('FRONTEND_ORIGIN', default_origin)
-additional_origins = os.environ.get('ADDITIONAL_ORIGINS', '')
+# Configure CORS to allow all origins (simplest approach for Netlify deployments)
+# This allows any origin including localhost and all Netlify subdomains
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
-allowed_origins = {default_origin, 'http://127.0.0.1:3000', 'https://localhost:3000', frontend_origin}
-
-# Add additional origins if provided
-if additional_origins:
-    allowed_origins.update({origin.strip() for origin in additional_origins.split(',') if origin.strip()})
-
-# Function to check if origin is allowed (supports Netlify subdomains dynamically)
-def is_origin_allowed(origin):
-    """Check if origin is in allowed list or is a Netlify subdomain"""
-    if not origin:
-        return False
-    
-    # Check exact match first
-    if origin in allowed_origins:
-        return True
-    
-    # Allow any Netlify subdomain (more permissive for flexibility)
-    if origin and 'netlify.app' in origin:
-        print(f"[CORS] Allowing Netlify subdomain: {origin}")
-        return True
-    
-    # Also allow if frontend_origin is a Netlify domain and request is from Netlify
-    if frontend_origin and 'netlify.app' in frontend_origin and origin and 'netlify.app' in origin:
-        print(f"[CORS] Allowing Netlify subdomain via frontend_origin: {origin}")
-        return True
-    
-    print(f"[CORS] Blocking origin: {origin} (not in allowed list)")
-    return False
-
-print(f"[CORS] Configured origins: {allowed_origins}")
-print(f"[CORS] Frontend origin: {frontend_origin}")
-
-# Use function-based origin check for dynamic Netlify subdomain support
-CORS(app, resources={r"/*": {"origins": is_origin_allowed}})
+print("[CORS] Configured to allow all origins (*)")
 
 # ============================================================================
 # INTELLIGENT DROWSINESS DETECTION PARAMETERS
