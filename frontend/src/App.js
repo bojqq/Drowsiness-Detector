@@ -4,10 +4,15 @@ import LandingPage from './LandingPage';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
-// Debug: Log API URL in development
-if (process.env.NODE_ENV === 'development') {
-  console.log('API_URL:', API_URL);
-  console.log('REACT_APP_API_URL env:', process.env.REACT_APP_API_URL);
+// Debug: Log API URL in all environments (helps debug production issues)
+console.log('[CONFIG] API_URL:', API_URL);
+console.log('[CONFIG] REACT_APP_API_URL env:', process.env.REACT_APP_API_URL);
+console.log('[CONFIG] NODE_ENV:', process.env.NODE_ENV);
+
+// Warn if API_URL is not properly configured in production
+if (process.env.NODE_ENV === 'production' && (!API_URL || API_URL === 'http://localhost:5001')) {
+  console.error('[ERROR] ⚠️ REACT_APP_API_URL is not set in Netlify environment variables!');
+  console.error('[ERROR] ⚠️ Set REACT_APP_API_URL to your Render backend URL in Netlify dashboard');
 }
 
 function App() {
@@ -159,19 +164,37 @@ function App() {
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
 
     try {
+      // Ensure API_URL is set and valid
+      if (!API_URL || API_URL === 'http://localhost:5001') {
+        console.error('[ERROR] API_URL not configured! Set REACT_APP_API_URL in Netlify environment variables.');
+        setStatus('API not configured - check environment variables');
+        return;
+      }
+
       const response = await fetch(`${API_URL}/detect_drowsiness`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: imageData })
       });
 
+      // Check if response is OK before parsing JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ERROR] API returned ${response.status}: ${errorText}`);
+        setStatus(`Connection error: ${response.status}`);
+        setFaceBox(null);
+        setFaceState('searching');
+        return;
+      }
+
+      // Parse JSON only if response is OK
       const result = await response.json();
       
       // Handle error responses from the API
-      if (result.error || (response.ok === false)) {
-        const errorMessage = result.error || `HTTP ${response.status} error`;
-        console.error('API error:', new Error(errorMessage));
-        setStatus('Connection error');
+      if (result.error) {
+        const errorMessage = result.error;
+        console.error('API error:', errorMessage);
+        setStatus(`Error: ${errorMessage}`);
         setFaceBox(null);
         setFaceState('searching');
         return;
@@ -252,9 +275,19 @@ function App() {
         }
       }
     } catch (err) {
-      setStatus('Connection error');
-      console.error('API error:', err);
+      // Better error handling for network/parsing errors
+      if (err instanceof SyntaxError) {
+        console.error('[ERROR] Failed to parse JSON response - backend may be down or returning invalid data:', err.message);
+        setStatus('Backend connection failed - check if Render service is running');
+      } else if (err instanceof TypeError && err.message.includes('fetch')) {
+        console.error('[ERROR] Network error - cannot reach backend:', err.message);
+        setStatus('Cannot connect to backend - check API URL configuration');
+      } else {
+        console.error('[ERROR] Unexpected error:', err);
+        setStatus('Connection error - check console for details');
+      }
       setFaceBox(null);
+      setFaceState('searching');
     }
   }, [isDrowsy, wasAlertActive, showCalibration]);
   

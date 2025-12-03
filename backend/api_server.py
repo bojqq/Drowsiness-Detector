@@ -16,10 +16,26 @@ frontend_origin = os.environ.get('FRONTEND_ORIGIN', default_origin)
 additional_origins = os.environ.get('ADDITIONAL_ORIGINS', '')
 
 allowed_origins = {default_origin, 'http://127.0.0.1:3000', 'https://localhost:3000', frontend_origin}
+
+# Add additional origins if provided
 if additional_origins:
     allowed_origins.update({origin.strip() for origin in additional_origins.split(',') if origin.strip()})
 
-CORS(app, resources={r"/*": {"origins": list(allowed_origins)}})
+# Function to check if origin is allowed (supports Netlify subdomains dynamically)
+def is_origin_allowed(origin):
+    """Check if origin is in allowed list or is a Netlify subdomain"""
+    if origin in allowed_origins:
+        return True
+    # Allow any Netlify subdomain if frontend_origin is a Netlify domain
+    if frontend_origin and 'netlify.app' in frontend_origin and origin and 'netlify.app' in origin:
+        return True
+    return False
+
+print(f"[CORS] Configured origins: {allowed_origins}")
+print(f"[CORS] Frontend origin: {frontend_origin}")
+
+# Use function-based origin check for dynamic Netlify subdomain support
+CORS(app, resources={r"/*": {"origins": is_origin_allowed}})
 
 # ============================================================================
 # INTELLIGENT DROWSINESS DETECTION PARAMETERS
