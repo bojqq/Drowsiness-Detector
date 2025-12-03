@@ -24,11 +24,24 @@ if additional_origins:
 # Function to check if origin is allowed (supports Netlify subdomains dynamically)
 def is_origin_allowed(origin):
     """Check if origin is in allowed list or is a Netlify subdomain"""
+    if not origin:
+        return False
+    
+    # Check exact match first
     if origin in allowed_origins:
         return True
-    # Allow any Netlify subdomain if frontend_origin is a Netlify domain
-    if frontend_origin and 'netlify.app' in frontend_origin and origin and 'netlify.app' in origin:
+    
+    # Allow any Netlify subdomain (more permissive for flexibility)
+    if origin and 'netlify.app' in origin:
+        print(f"[CORS] Allowing Netlify subdomain: {origin}")
         return True
+    
+    # Also allow if frontend_origin is a Netlify domain and request is from Netlify
+    if frontend_origin and 'netlify.app' in frontend_origin and origin and 'netlify.app' in origin:
+        print(f"[CORS] Allowing Netlify subdomain via frontend_origin: {origin}")
+        return True
+    
+    print(f"[CORS] Blocking origin: {origin} (not in allowed list)")
     return False
 
 print(f"[CORS] Configured origins: {allowed_origins}")
