@@ -31,7 +31,6 @@ function App() {
   const [showCalibration, setShowCalibration] = useState(false);
   const [calibrationData, setCalibrationData] = useState({ min: null, max: null, avg: null, count: 0 });
   const [drowsyScore, setDrowsyScore] = useState(0);
-  const [confidence, setConfidence] = useState(0);
   const [wasAlertActive, setWasAlertActive] = useState(false);
   const [isAlertPlaying, setIsAlertPlaying] = useState(false);
   
@@ -206,7 +205,6 @@ function App() {
       // Update drowsiness metrics
       if (result.drowsy_score !== undefined) {
         setDrowsyScore(result.drowsy_score);
-        setConfidence(result.confidence || 0);
       }
       
       // Update face box and state
@@ -257,7 +255,6 @@ function App() {
         setFaceState('searching');
         setStatus(result.message || '🔍 Searching for face...');
         setDrowsyScore(0);
-        setConfidence(0);
       }
       
       if (result.ear) {
@@ -299,14 +296,16 @@ function App() {
   useEffect(() => {
     startCamera();
     return () => {
-      // Cleanup on unmount
-      if (videoRef.current && videoRef.current.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      // Cleanup on unmount - capture ref values to avoid stale closure
+      const video = videoRef.current;
+      const detectionInterval = detectionIntervalRef.current;
+      
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
       }
       
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-        detectionIntervalRef.current = null;
+      if (detectionInterval) {
+        clearInterval(detectionInterval);
       }
       
       stopAlert(); // Stop any playing alerts
