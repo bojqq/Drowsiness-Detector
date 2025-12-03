@@ -4,6 +4,12 @@ import LandingPage from './LandingPage';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
+// Debug: Log API URL in development
+if (process.env.NODE_ENV === 'development') {
+  console.log('API_URL:', API_URL);
+  console.log('REACT_APP_API_URL env:', process.env.REACT_APP_API_URL);
+}
+
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
