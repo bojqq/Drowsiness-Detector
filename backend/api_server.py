@@ -503,6 +503,18 @@ def detect_drowsiness():
             traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint - API info"""
+    return jsonify({
+        'api': 'Drowsiness Detection API',
+        'version': '1.0',
+        'endpoints': {
+            '/health': 'GET - Health check',
+            '/detect_drowsiness': 'POST - Detect drowsiness from image'
+        }
+    })
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'})
