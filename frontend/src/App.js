@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './App.css';
 import LandingPage from './LandingPage';
 
@@ -8,6 +8,8 @@ function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const audioContextRef = useRef(null);
+  const alertIntervalRef = useRef(null); // Track alert loop interval
+  const alarmActiveRef = useRef(false); // True when alarm loop is running
   
   const [isDrowsy, setIsDrowsy] = useState(false);
   const [status, setStatus] = useState('Initializing...');
@@ -17,6 +19,13 @@ function App() {
   const [faceState, setFaceState] = useState('searching'); // 'searching', 'locked', 'drowsy'
   const [showCalibration, setShowCalibration] = useState(false);
   const [calibrationData, setCalibrationData] = useState({ min: null, max: null, avg: null, count: 0 });
+  const [drowsyScore, setDrowsyScore] = useState(0);
+  const [confidence, setConfidence] = useState(0);
+  const [wasAlertActive, setWasAlertActive] = useState(false);
+  const [isAlertPlaying, setIsAlertPlaying] = useState(false);
+  
+  const captureAndSendRef = useRef(null);
+  const detectionIntervalRef = useRef(null);
 
   const suggestions = [
     '☕ Take a coffee break',
@@ -27,16 +36,21 @@ function App() {
     '😴 Consider taking a power nap'
   ];
 
-  useEffect(() => {
-    startCamera();
-    return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+  // Define callbacks first before using them
+  const startDetection = useCallback(() => {
+    // Reduced from 1500ms to 1000ms for faster detection
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+    }
+    
+    detectionIntervalRef.current = setInterval(() => {
+      if (captureAndSendRef.current) {
+        captureAndSendRef.current();
       }
-    };
+    }, 1000);
   }, []);
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: 640, height: 480 } 
@@ -51,17 +65,80 @@ function App() {
       setStatus('Camera access denied');
       console.error('Camera error:', err);
     }
-  };
+  }, [startDetection]);
 
-  const startDetection = () => {
-    // Reduced from 1500ms to 1000ms for faster detection
-    // This means 2 consecutive frames = 2 seconds instead of 3 seconds
-    setInterval(() => {
-      captureAndSend();
-    }, 1000);
-  };
+  const playAlertBeep = useCallback(() => {
+    if (!audioContextRef.current) return;
+    
+    const ctx = audioContextRef.current;
+    
+    // Create LOUD multi-tone alarm sound
+    const frequencies = [1000, 1400, 800]; // Three tones for urgency
+    
+    frequencies.forEach((freq, index) => {
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      oscillator.frequency.value = freq;
+      oscillator.type = 'square'; // Square wave is louder and more jarring
+      
+      const startTime = ctx.currentTime + (index * 0.1);
+      
+      // LOUD volume - 0.6 (60% volume)
+      gainNode.gain.setValueAtTime(0.6, startTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
+      
+      oscillator.start(startTime);
+      oscillator.stop(startTime + 0.3);
+    });
+  }, []);
+  
+  const playAlert = useCallback(() => {
+    // Prevent duplicate intervals by checking ref state (instant, no async lag)
+    if (alarmActiveRef.current) {
+      return;
+    }
+    
+    alarmActiveRef.current = true;
+    setIsAlertPlaying(true);
+    console.log('[ALERT] 🚨 Starting LOUD continuous alarm!');
+    
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    // Play loud alert immediately
+    playAlertBeep();
+    
+    // Continue playing every 800ms until stopped
+    alertIntervalRef.current = setInterval(() => {
+      playAlertBeep();
+    }, 800);
+  }, [playAlertBeep]);
+  
+  const stopAlert = useCallback(() => {
+    if (!alarmActiveRef.current && !alertIntervalRef.current) {
+      setIsAlertPlaying(false);
+      return; // Already stopped
+    }
+    
+    console.log('[ALERT] ✅ Stopping alarm - user woke up or face lost');
+    
+    alarmActiveRef.current = false;
+    
+    if (alertIntervalRef.current) {
+      clearInterval(alertIntervalRef.current);
+      alertIntervalRef.current = null;
+      console.log('[ALERT] 🔇 Interval cleared');
+    }
+    
+    setIsAlertPlaying(false);
+  }, []);
 
-  const captureAndSend = async () => {
+  const captureAndSend = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
@@ -94,34 +171,64 @@ function App() {
         return;
       }
       
-      // Debug logging to help tune detection
-      console.log(`[DEBUG] EAR: ${result.ear} | Drowsy: ${result.is_drowsy} | Counter: ${result.frame_counter || 0}`);
+      // Enhanced debug logging
+      console.log(`[DEBUG] EAR: ${result.ear} | Raw: ${result.raw_ear} | Drowsy: ${result.is_drowsy} | Score: ${result.drowsy_score}/100 | Blink: ${result.is_blink}`);
       
-      // Update face box
+      // Update drowsiness metrics
+      if (result.drowsy_score !== undefined) {
+        setDrowsyScore(result.drowsy_score);
+        setConfidence(result.confidence || 0);
+      }
+      
+      // Update face box and state
       if (result.face_box) {
         setFaceBox(result.face_box);
         
         if (result.is_drowsy) {
+          // DROWSY STATE - start alarm via state flag
+          if (!isDrowsy) {
+            console.log('[ALERT] 🚨 Backend reported drowsiness - will trigger alarm');
+          }
           setIsDrowsy(true);
           setFaceState('drowsy');
-          playAlert();
+          setWasAlertActive(true);
           setStatus('🚨 WAKE UP! DROWSINESS DETECTED!');
         } else {
+          if (isDrowsy) {
+            console.log('[ALERT] ✅ Backend cleared drowsiness - stopping alarm');
+          }
           setIsDrowsy(false);
           setFaceState('locked');
-          // Show more detailed status based on EAR value
-          const earValue = result.ear;
-          if (earValue < 0.30) {
+          
+          // Dynamic status based on drowsiness score and message
+          const score = result.drowsy_score || 0;
+          const msg = result.message || '';
+          
+          if (msg === 'Recovered!' || msg === 'Recovering...') {
+            setStatus(`✅ ${msg}`);
+          } else if (score > 60) {
+            setStatus('⚠️ Warning - Getting very drowsy!');
+          } else if (score > 40) {
             setStatus('⚠️ Face Locked - Eyes getting heavy...');
+          } else if (score > 20) {
+            setStatus('✅ Face Locked - Slight fatigue detected');
+          } else if (msg === 'Eyes heavy...') {
+            setStatus('✅ Face Locked - Monitoring...');
           } else {
             setStatus('✅ Face Locked - Alert and monitoring');
           }
         }
       } else {
+        if (isDrowsy || wasAlertActive) {
+          console.log('[ALERT] ⚠️ Face lost - forcing alarm stop');
+        }
+        
+        setIsDrowsy(false);
         setFaceBox(null);
         setFaceState('searching');
-        setIsDrowsy(false);
-        setStatus('🔍 Searching for face...');
+        setStatus(result.message || '🔍 Searching for face...');
+        setDrowsyScore(0);
+        setConfidence(0);
       }
       
       if (result.ear) {
@@ -143,32 +250,53 @@ function App() {
       console.error('API error:', err);
       setFaceBox(null);
     }
-  };
+  }, [isDrowsy, wasAlertActive, showCalibration]);
+  
+  useEffect(() => {
+    captureAndSendRef.current = captureAndSend;
+  }, [captureAndSend]);
 
-  const playAlert = () => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+  // Mount effect - start camera
+  useEffect(() => {
+    startCamera();
+    return () => {
+      // Cleanup on unmount
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+      
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
+      }
+      
+      stopAlert(); // Stop any playing alerts
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Centralized effect to start/stop alarm based on drowsy state
+  useEffect(() => {
+    if (isDrowsy) {
+      playAlert();
+    } else {
+      stopAlert();
+      
+      if (wasAlertActive) {
+        console.log('[ALERT] 💤 Alarm recovered - resetting alert state');
+        setWasAlertActive(false);
+      }
     }
-    
-    const ctx = audioContextRef.current;
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
-    
-    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-    
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.5);
-  };
+  }, [isDrowsy, wasAlertActive, playAlert, stopAlert]);
 
   return (
     <div className="App">
+      {/* Alarm Indicator - Fixed position */}
+      {isAlertPlaying && (
+        <div className="alarm-indicator">
+          ALARM PLAYING - WAKE UP!
+        </div>
+      )}
+      
       <LandingPage />
       
       <section id="detector-section" className="detector-section">
@@ -215,6 +343,34 @@ function App() {
         <div className={`status-panel ${isDrowsy ? 'drowsy' : 'alert'}`}>
           <h2>{status}</h2>
           {ear && <p className="ear-value">EAR: {ear}</p>}
+          
+          {/* Drowsiness Confidence Meter */}
+          {faceBox && (
+            <div className="confidence-meter">
+              <div className="confidence-label">
+                <span>Drowsiness Level</span>
+                <span className="confidence-value">{drowsyScore.toFixed(0)}%</span>
+              </div>
+              <div className="confidence-bar-container">
+                <div 
+                  className={`confidence-bar ${
+                    drowsyScore > 70 ? 'critical' : 
+                    drowsyScore > 40 ? 'warning' : 
+                    drowsyScore > 20 ? 'caution' : 'safe'
+                  }`}
+                  style={{ width: `${Math.min(drowsyScore, 100)}%` }}
+                >
+                  <div className="confidence-bar-glow"></div>
+                </div>
+              </div>
+              <div className="confidence-legend">
+                <span className="legend-item safe">Safe (0-20%)</span>
+                <span className="legend-item caution">Caution (20-40%)</span>
+                <span className="legend-item warning">Warning (40-70%)</span>
+                <span className="legend-item critical">Critical (70-100%)</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {isDrowsy && (
@@ -270,29 +426,50 @@ function App() {
         {/* Debug Info Panel */}
         <div className="debug-panel">
           <details>
-            <summary>🔍 Debug Info & Tuning Guide</summary>
+            <summary>🔍 Debug Info & Intelligent Detection Guide</summary>
             <div className="debug-content">
+              <h4>🧠 Intelligent Detection Features:</h4>
+              <ul>
+                <li>✓ <strong>Blink Detection:</strong> Automatically ignores normal blinks (under 0.4 seconds)</li>
+                <li>✓ <strong>Temporal Smoothing:</strong> Uses rolling average to reduce false alerts</li>
+                <li>✓ <strong>Drowsiness Score:</strong> 0-100 scale that decays gradually when eyes open</li>
+                <li>✓ <strong>Confirmation Period:</strong> Must maintain high score for 2.5 seconds before alert</li>
+                <li>✓ <strong>Grace Period:</strong> 3-second recovery time after opening eyes</li>
+              </ul>
+              
               <h4>Current Settings:</h4>
               <ul>
-                <li>EAR Threshold: 0.28 (drowsy if below this)</li>
+                <li>EAR Threshold: 0.27 (eyes potentially closing)</li>
+                <li>Alert EAR: 0.32 (definitely alert)</li>
                 <li>Detection Speed: 1 second per frame</li>
-                <li>Alert Trigger: 2 consecutive frames (2 seconds)</li>
+                <li>Alert Trigger: Score ≥ 70/100 for 2.5 seconds</li>
+                <li>Score Decay: 15% per frame when eyes open</li>
+              </ul>
+              
+              <h4>How It Works:</h4>
+              <ul>
+                <li><strong>Normal Blink:</strong> Detected and ignored - score unchanged</li>
+                <li><strong>Eyes Closing:</strong> Score increases by 15-22 points per frame</li>
+                <li><strong>Eyes Opening:</strong> Score decays gradually (15-25% per frame)</li>
+                <li><strong>Alert Trigger:</strong> Score stays above 70 for 2.5 seconds</li>
+                <li><strong>Recovery:</strong> 3-second grace period prevents re-alerting</li>
               </ul>
               
               <h4>Troubleshooting:</h4>
               <ul>
-                <li><strong>Not detecting drowsiness?</strong> Your EAR might be naturally low. Check calibration above.</li>
-                <li><strong>Too many false alerts?</strong> Improve lighting or adjust camera angle.</li>
-                <li><strong>Yellow box stuck?</strong> Ensure good lighting and face the camera directly.</li>
-                <li><strong>Detection too slow?</strong> Backend is processing - check console for timing.</li>
+                <li><strong>Not detecting drowsiness?</strong> Check if your EAR drops below 0.27 when drowsy (use calibration)</li>
+                <li><strong>Still getting false alerts?</strong> Improve lighting - backend logs will show blink detection</li>
+                <li><strong>Yellow box stuck?</strong> Ensure good frontal lighting and face camera directly</li>
+                <li><strong>Detection too sensitive?</strong> Check console - normal blinks should be detected</li>
               </ul>
               
               <h4>Optimal Conditions:</h4>
               <ul>
                 <li>✓ Good frontal lighting (not backlit)</li>
-                <li>✓ Face camera directly</li>
-                <li>✓ Remove glasses if possible (can affect detection)</li>
-                <li>✓ Stable head position</li>
+                <li>✓ Face camera directly at eye level</li>
+                <li>✓ Remove glasses if detection is poor</li>
+                <li>✓ Keep head relatively stable</li>
+                <li>✓ Distance: 1-2 feet from camera</li>
               </ul>
             </div>
           </details>

@@ -1,0 +1,19 @@
+[build]
+  # Directory with the React app
+  base = "frontend"
+  
+  # Build command
+  command = "npm run build"
+  
+  # Output directory
+  publish = "build"
+
+# Redirect all routes to index.html for React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables (set these in Netlify dashboard)
+# REACT_APP_API_URL = your backend URL on Render
+
